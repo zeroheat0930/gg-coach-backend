@@ -1,0 +1,32 @@
+name: Deploy to Firebase
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'functions/**'
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: cd functions && npm ci
+
+      - name: Deploy to Firebase
+        uses: w9jds/firebase-action@master
+        with:
+          action: deploy
+          project_id: 'projectpubg-e5215'
+          firebase_token: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROJECTPUBG_E5215 }}
+          args: --only functions
+        env:
+          FIREBASE_CLI_PREVIEWS: extensions
