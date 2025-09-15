@@ -1,4 +1,3 @@
-// 좀되라시발ㅋㅋㅋ 징하다 진짜로 십새끼야
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
@@ -7,23 +6,19 @@ const axios = require("axios");
 initializeApp();
 const db = getFirestore();
 
-// defineString은 더 이상 사용하지 않습니다.
-
 exports.updateWeaponMeta = onSchedule({
   schedule: "every 24 hours",
   region: "asia-northeast3",
   timeoutSeconds: 540,
   memory: "1GiB",
-  secrets: ["PUBG_API_KEY"], // 함수가 이 비밀 키를 사용하도록 명시
+  secrets: ["PUBG_API_KEY"],
 }, async (event) => {
   console.log("Starting weapon meta update function (v2)...");
 
   try {
-    // ### 여기가 수정된 부분입니다 ###
-    // v2 secrets 방식에서는 process.env로 비밀 키에 접근합니다.
     const apiKey = process.env.PUBG_API_KEY;
     if (!apiKey) {
-      throw new Error("PUBG_API_KEY secret is not set or available.");
+      throw new Error("PUBG_API_KEY secret is not set.");
     }
 
     const platformRegion = "pc-kakao";
@@ -37,43 +32,34 @@ exports.updateWeaponMeta = onSchedule({
       "Accept": "application/vnd.api+json",
     };
 
-    // playerHeaders는 이제 필요 없으니 삭제하고, headers를 재사용합니다.
-
     const leaderboardResponse = await axios.get(leaderboardUrl, {headers});
 
     const leaderboardData = leaderboardResponse.data;
+    // 변수 이름을 'playerIds'로 통일했습니다.
     const playerIds = leaderboardData.data.relationships.players.data
         .map((p) => p.id);
     console.log(`Found ${playerIds.length} rankers.`);
 
-    console.log("Fetching recent matches for rankers in batches...");
     const matchIdsToAnalyze = new Set();
-    const samplePlayerIds = allPlayerIds.slice(50, 150); // 100명의 랭커를 샘플링
-    
-    // 10명씩 묶어서 한 번에 요청
-    for (let i = 0; i < samplePlayerIds.length; i += 10) {
-      const batchIds = samplePlayerIds.slice(i, i + 10);
-      const playerUrl = `https://api.pubg.com/shards/${platformRegion}/players?filter[playerIds]=${batchIds.join(",")}`;
+    // 'allPlayerIds'가 아닌 'playerIds'를 사용하도록 수정했습니다.
+    const samplePlayerIds = playerIds.slice(50, 150);
+
+    for (const playerId of samplePlayerIds) {
+      const playerUrl = `https://api.pubg.com/shards/${platformRegion}` +
+        `/players/${playerId}`;
       const playerResponse = await axios.get(playerUrl, {headers});
-      
-      const playersData = playerResponse.data.data;
-      for (const player of playersData) {
-        const matchData = player.relationships.matches.data;
-        if (matchData && matchData.length > 0) {
-          matchIdsToAnalyze.add(matchData[0].id);
-        }
+      const matchData =
+        playerResponse.data.data.relationships.matches.data;
+      if (matchData && matchData.length > 0) {
+        matchIdsToAnalyze.add(matchData[0].id);
       }
-      // 각 일괄 요청 사이에 6.1초 대기
+      if (matchIdsToAnalyze.size >= 10) break;
       await new Promise((resolve) => setTimeout(resolve, 6100));
     }
     console.log(`Found ${matchIdsToAnalyze.size} unique matches to analyze.`);
 
-    if (matchIdsToAnalyze.size === 0) {
-        throw new Error("Could not find any recent matches from the rankers sample.");
-    }
-
     const weaponCounts = {};
-    for (const matchId of matchIdsToAnalyze) {
+    for (const matchId of Array.from(matchIdsToAnalyze).slice(0, 15)) {
       const matchUrl =
         `https://api.pubg.com/shards/${platformRegion}/matches/${matchId}`;
       const matchResponse = await axios.get(matchUrl, {
@@ -106,8 +92,8 @@ exports.updateWeaponMeta = onSchedule({
       await new Promise((resolve) => setTimeout(resolve, 6100));
     }
     console.log(
-        `Finished analyzing weapons. Found ` +
-        `${Object.keys(weaponCounts).length} types.`,
+        `Finished analyzing weapons. ` +
+        `Found ${Object.keys(weaponCounts).length} types.`,
     );
 
     const topWeapons = Object.entries(weaponCounts)
