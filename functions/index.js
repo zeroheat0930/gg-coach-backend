@@ -6,14 +6,14 @@ const axios = require("axios");
 initializeApp();
 const db = getFirestore();
 
-exports.collectRecentMatchIds = onSchedule({
+exports.collectMatchData = onSchedule({
   schedule: "every 1 hours",
   region: "asia-northeast3",
-  timeoutSeconds: 300,
-  memory: "256MiB",
+  timeoutSeconds: 540,
+  memory: "1GiB",
   secrets: ["PUBG_API_KEY"],
 }, async (event) => {
-  console.log("Starting to collect recent match IDs...");
+  console.log("Starting to collect full match data...");
 
   try {
     const apiKey = process.env.PUBG_API_KEY;
@@ -22,31 +22,71 @@ exports.collectRecentMatchIds = onSchedule({
     const platform = "steam";
     const samplesUrl = `https://api.pubg.com/shards/${platform}/samples`;
 
-    const response = await axios.get(samplesUrl, {
+    const samplesResponse = await axios.get(samplesUrl, {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Accept": "application/vnd.api+json",
       },
     });
+    if (samplesResponse.status !== 200) {
+      throw new Error(`Failed to fetch samples: ${samplesResponse.status}`);
+    }
+    const matchIds = samplesResponse.data.data.relationships.matches.data
+        .map((m) => m.id);
+    console.log(`Collected ${matchIds.length} recent match IDs.`);
 
-    // ### 여기가 수정된 부분입니다 ###
-    if (response.status === 200) {
-      const matchIds = response.data.data.relationships.matches.data
-          .map((m) => m.id);
+    let newMatchesSaved = 0;
 
-      await db.collection("samples").doc("recent_matches").set({
-        updatedAt: new Date(),
-        matchIds: matchIds,
+    for (const matchId of matchIds.slice(0, 15)) {
+      const matchRef = db.collection("matches").doc(matchId);
+      const doc = await matchRef.get();
+
+      if (doc.exists) {
+        console.log(`Match ${matchId} already exists. Skipping.`);
+        continue;
+      }
+
+      const matchUrl =
+        `https://api.pubg.com/shards/${platform}/matches/${matchId}`;
+      const matchResponse = await axios.get(matchUrl, {
+        headers: {"Accept": "application/vnd.api+json"},
       });
 
-      console.log(`Successfully collected ${matchIds.length} match IDs.`);
-    } else {
-      // 200(성공)이 아닐 때만 에러를 발생시킵니다.
-      throw new Error(`Failed to fetch samples: ${response.status}`);
+      if (matchResponse.status === 200) {
+        const matchData = matchResponse.data;
+        const attributes = matchData.data.attributes;
+        await matchRef.set({
+          map: attributes.mapName,
+          gameMode: attributes.gameMode,
+          duration: attributes.duration,
+          createdAt: new Date(attributes.createdAt),
+        });
+
+        const participants = matchData.included
+            .filter((inc) => inc.type === "participant");
+        for (const participant of participants) {
+          const stats = participant.attributes.stats;
+          const participantId = stats.playerId;
+          if (participantId) {
+            const participantRef = matchRef
+                .collection("participants").doc(participantId);
+            await participantRef.set({
+              nickname: stats.name,
+              rank: stats.winPlace,
+              kills: stats.kills,
+              damage: stats.damageDealt,
+            });
+          }
+        }
+        newMatchesSaved++;
+        console.log(`Successfully saved full data for match ${matchId}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
+    console.log(`Finished. Saved ${newMatchesSaved} new matches.`);
     return null;
   } catch (error) {
-    console.error("Error collecting match IDs:", error);
+    console.error("Error executing function:", error);
     return null;
   }
 });
