@@ -21,7 +21,6 @@ exports.collectMatchData = onSchedule({
 
     const platform = "steam";
     const samplesUrl = `https://api.pubg.com/shards/${platform}/samples`;
-
     const headers = {
       "Authorization": `Bearer ${apiKey}`,
       "Accept": "application/vnd.api+json",
@@ -36,16 +35,13 @@ exports.collectMatchData = onSchedule({
     console.log(`Collected ${matchIds.length} recent match IDs.`);
 
     let newMatchesSaved = 0;
-
     for (const matchId of matchIds.slice(0, 15)) {
       const matchRef = db.collection("matches").doc(matchId);
       const doc = await matchRef.get();
-
       if (doc.exists) {
         console.log(`Match ${matchId} already exists. Skipping.`);
         continue;
       }
-
       const matchUrl =
         `https://api.pubg.com/shards/${platform}/matches/${matchId}`;
       const matchResponse = await axios.get(matchUrl, {
@@ -56,12 +52,11 @@ exports.collectMatchData = onSchedule({
         const matchData = matchResponse.data;
         const attributes = matchData.data.attributes;
         const included = matchData.included;
-
         const rosters = included.filter((inc) => inc.type === "roster");
         const participants = included
             .filter((inc) => inc.type === "participant");
-
-        const winningRoster = rosters.find((r) => r.attributes.won === "true");
+        const winningRoster =
+          rosters.find((r) => r.attributes.won === "true");
         let winningTeamMembers = [];
         if (winningRoster) {
           const winnerIds = winningRoster.relationships.participants
@@ -72,11 +67,11 @@ exports.collectMatchData = onSchedule({
         }
 
         await matchRef.set({
-          map: attributes.mapName,
-          gameMode: attributes.gameMode,
-          duration: attributes.duration,
+          map: attributes.mapName || "Unknown",
+          gameMode: attributes.gameMode || "Unknown",
+          duration: attributes.duration || 0,
           createdAt: new Date(attributes.createdAt),
-          isRanked: attributes.isRanked,
+          isRanked: attributes.isRanked || false,
           totalTeams: rosters.length,
           winningTeam: winningTeamMembers,
         });
@@ -87,25 +82,24 @@ exports.collectMatchData = onSchedule({
           if (participantId) {
             const participantRef =
               matchRef.collection("participants").doc(participantId);
-            // API가 제공하는 모든 유용한 스탯을 저장합니다.
             await participantRef.set({
-              nickname: stats.name,
-              rank: stats.winPlace,
-              kills: stats.kills,
-              damage: stats.damageDealt,
-              assists: stats.assists,
-              DBNOs: stats.DBNOs,
-              headshotKills: stats.headshotKills,
-              longestKill: stats.longestKill,
-              timeSurvived: stats.timeSurvived,
-              revives: stats.revives,
-              heals: stats.heals,
-              boosts: stats.boosts,
-              walkDistance: stats.walkDistance,
-              rideDistance: stats.rideDistance,
-              swimDistance: stats.swimDistance,
-              teamKills: stats.teamKills,
-              vehicleDestroys: stats.vehicleDestroys,
+              nickname: stats.name || "Unknown",
+              rank: stats.winPlace || 0,
+              kills: stats.kills || 0,
+              damage: stats.damageDealt || 0,
+              assists: stats.assists || 0,
+              DBNOs: stats.DBNOs || 0,
+              headshotKills: stats.headshotKills || 0,
+              longestKill: stats.longestKill || 0,
+              timeSurvived: stats.timeSurvived || 0,
+              revives: stats.revives || 0,
+              heals: stats.heals || 0,
+              boosts: stats.boosts || 0,
+              walkDistance: stats.walkDistance || 0,
+              rideDistance: stats.rideDistance || 0,
+              swimDistance: stats.swimDistance || 0,
+              teamKills: stats.teamKills || 0,
+              vehicleDestroys: stats.vehicleDestroys || 0,
             });
           }
         }
