@@ -28,13 +28,16 @@ exports.collectMatchData = onSchedule({
 
     const samplesResponse = await axios.get(samplesUrl, {headers});
     if (samplesResponse.status !== 200) {
-      throw new Error(`Failed to fetch samples: ${samplesResponse.status}`);
+      const errorMsg = `Failed to fetch samples: ${samplesResponse.status}`;
+      throw new Error(errorMsg);
     }
     const matchIds = samplesResponse.data.data.relationships.matches.data
         .map((m) => m.id);
     console.log(`Collected ${matchIds.length} recent match IDs.`);
 
     let newMatchesSaved = 0;
+    const allWeaponCounts = {};
+
     for (const matchId of matchIds.slice(0, 15)) {
       const matchRef = db.collection("matches").doc(matchId);
       const doc = await matchRef.get();
@@ -59,7 +62,7 @@ exports.collectMatchData = onSchedule({
         const winningRoster =
           rosters.find((r) => r.attributes.won === "true");
         let winningTeamMembers = [];
-        if (winningRoster) {
+        if (winningRoster && winningRoster.relationships) {
           const winnerIds = winningRoster.relationships.participants
               .data.map((p) => p.id);
           winningTeamMembers = participants
@@ -77,13 +80,12 @@ exports.collectMatchData = onSchedule({
           winningTeam: winningTeamMembers,
         });
 
-        for (const participant of participants) {
-          const stats = participant.attributes.stats;
-          const participantId = stats.playerId;
-          if (participantId) {
-            const participantRef =
-              matchRef.collection("participants").doc(participantId);
-            await participantRef.set({
+        for (const p of participants) {
+          const stats = p.attributes.stats;
+          const pId = stats.playerId;
+          if (pId) {
+            const pRef = matchRef.collection("participants").doc(pId);
+            await pRef.set({
               nickname: stats.name || "Unknown",
               rank: stats.winPlace || 0,
               kills: stats.kills || 0,
@@ -96,22 +98,55 @@ exports.collectMatchData = onSchedule({
               revives: stats.revives || 0,
               heals: stats.heals || 0,
               boosts: stats.boosts || 0,
-              walkDistance: stats.walkDistance || 0,
-              rideDistance: stats.rideDistance || 0,
-              swimDistance: stats.swimDistance || 0,
-              teamKills: stats.teamKills || 0,
-              vehicleDestroys: stats.vehicleDestroys || 0,
             });
           }
         }
+
+        const assets = matchData.data.relationships.assets.data;
+        if (assets && assets.length > 0) {
+          const telemetryAsset = included.find((inc) => inc.id === assets[0].id);
+          if (telemetryAsset && telemetryAsset.attributes) {
+            const telemetryUrl = telemetryAsset.attributes.URL;
+            const telemetryResponse = await axios.get(telemetryUrl, {
+              headers: {"Accept-Encoding": "gzip"},
+            });
+            const telemetryEvents = telemetryResponse.data;
+            for (const event of telemetryEvents) {
+              if (
+                event._T === "LogItemPickup" &&
+                event.item && event.item.category === "Weapon"
+              ) {
+                const weaponName = event.item.itemId;
+                allWeaponCounts[weaponName] =
+                  (allWeaponCounts[weaponName] || 0) + 1;
+              }
+            }
+          }
+        }
         newMatchesSaved++;
-        // 여기가 수정된 부분입니다.
-        console.log(
-            `Successfully saved full data for match ${matchId}`,
-        );
+        const successMsg =
+          `Successfully saved full data for match ${matchId}`;
+        console.log(successMsg);
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
+
+    if (Object.keys(allWeaponCounts).length > 0) {
+      const topWeapons = Object.entries(allWeaponCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([name, count], index) => ({
+            rank: index + 1,
+            weaponId: name,
+            pickCount: count,
+          }));
+      await db.collection("global_stats").doc("weapon_meta").set({
+        updatedAt: new Date(),
+        topWeapons: topWeapons,
+      });
+      console.log("Successfully updated weapon meta in Firestore!");
+    }
+
     console.log(`Finished. Saved ${newMatchesSaved} new matches.`);
     return null;
   } catch (error) {
