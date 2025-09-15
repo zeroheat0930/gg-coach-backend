@@ -55,14 +55,20 @@ exports.collectMatchData = onSchedule({
       if (matchResponse.status === 200) {
         const matchData = matchResponse.data;
         const attributes = matchData.data.attributes;
-        let telemetryUrl = "";
-        const assets = matchData.data.relationships.assets.data;
-        if (assets && assets.length > 0) {
-          const telemetryAsset = matchData.included
-              .find((inc) => inc.id === assets[0].id);
-          if (telemetryAsset) {
-            telemetryUrl = telemetryAsset.attributes.URL;
-          }
+        const included = matchData.included;
+
+        const rosters = included.filter((inc) => inc.type === "roster");
+        const participants = included
+            .filter((inc) => inc.type === "participant");
+
+        const winningRoster = rosters.find((r) => r.attributes.won === "true");
+        let winningTeamMembers = [];
+        if (winningRoster) {
+          const winnerIds = winningRoster.relationships.participants
+              .data.map((p) => p.id);
+          winningTeamMembers = participants
+              .filter((p) => winnerIds.includes(p.id))
+              .map((p) => p.attributes.stats.name);
         }
 
         await matchRef.set({
@@ -71,23 +77,35 @@ exports.collectMatchData = onSchedule({
           duration: attributes.duration,
           createdAt: new Date(attributes.createdAt),
           isRanked: attributes.isRanked,
-          isCustomMatch: attributes.isCustomMatch,
-          telemetryUrl: telemetryUrl,
+          totalTeams: rosters.length,
+          winningTeam: winningTeamMembers,
         });
 
-        const participants = matchData.included
-            .filter((inc) => inc.type === "participant");
         for (const participant of participants) {
           const stats = participant.attributes.stats;
           const participantId = stats.playerId;
           if (participantId) {
             const participantRef =
               matchRef.collection("participants").doc(participantId);
+            // API가 제공하는 모든 유용한 스탯을 저장합니다.
             await participantRef.set({
               nickname: stats.name,
               rank: stats.winPlace,
               kills: stats.kills,
               damage: stats.damageDealt,
+              assists: stats.assists,
+              DBNOs: stats.DBNOs,
+              headshotKills: stats.headshotKills,
+              longestKill: stats.longestKill,
+              timeSurvived: stats.timeSurvived,
+              revives: stats.revives,
+              heals: stats.heals,
+              boosts: stats.boosts,
+              walkDistance: stats.walkDistance,
+              rideDistance: stats.rideDistance,
+              swimDistance: stats.swimDistance,
+              teamKills: stats.teamKills,
+              vehicleDestroys: stats.vehicleDestroys,
             });
           }
         }
