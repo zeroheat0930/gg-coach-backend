@@ -6,120 +6,46 @@ const axios = require("axios");
 initializeApp();
 const db = getFirestore();
 
-exports.updateWeaponMeta = onSchedule({
-  schedule: "every 24 hours",
+exports.collectRecentMatchIds = onSchedule({
+  schedule: "every 1 hours", // 1시간마다 실행
   region: "asia-northeast3",
-  timeoutSeconds: 540,
-  memory: "1GiB",
+  timeoutSeconds: 300,
+  memory: "256MiB",
   secrets: ["PUBG_API_KEY"],
 }, async (event) => {
-  console.log("Starting weapon meta update function (v2)...");
+  console.log("Starting to collect recent match IDs...");
 
   try {
     const apiKey = process.env.PUBG_API_KEY;
-    if (!apiKey) {
-      throw new Error("PUBG_API_KEY secret is not set.");
-    }
+    if (!apiKey) throw new Error("PUBG_API_KEY secret is not set.");
 
-    const platformRegion = "pc-kakao";
-    const seasonId = "division.bro.official.pc-2018-37";
-    const leaderboardUrl =
-      `https://api.pubg.com/shards/${platformRegion}` +
-      `/leaderboards/${seasonId}/squad-fpp`;
-
-    const headers = {
-      "Authorization": `Bearer ${apiKey}`,
-      "Accept": "application/vnd.api+json",
-    };
-
-    const leaderboardResponse = await axios.get(leaderboardUrl, {headers});
-
-    const leaderboardData = leaderboardResponse.data;
-    const playerIds = leaderboardData.data.relationships.players.data
-        .map((p) => p.id);
-    console.log(`Found ${playerIds.length} rankers.`);
-
-    const matchIdsToAnalyze = new Set();
-    const samplePlayerIds = playerIds.slice(50, 150);
-
-    for (let i = 0; i < samplePlayerIds.length; i += 10) {
-      const batchIds = samplePlayerIds.slice(i, i + 10);
-      const playerUrl =
-        `https://api.pubg.com/shards/${platformRegion}/players` +
-        `?filter[playerIds]=${batchIds.join(",")}`;
-      const playerResponse = await axios.get(playerUrl, {headers});
-
-      const playersData = playerResponse.data.data;
-      for (const player of playersData) {
-        const matchData = player.relationships.matches.data;
-        if (matchData && matchData.length > 0) {
-          matchIdsToAnalyze.add(matchData[0].id);
-        }
-      }
-      await new Promise((resolve) => setTimeout(resolve, 6100));
-    }
-    console.log(`Found ${matchIdsToAnalyze.size} unique matches to analyze.`);
-
-    if (matchIdsToAnalyze.size === 0) {
-      throw new Error("Could not find any recent matches.");
-    }
-
-    const weaponCounts = {};
-    for (const matchId of Array.from(matchIdsToAnalyze).slice(0, 15)) {
-      const matchUrl =
-        `https://api.pubg.com/shards/${platformRegion}/matches/${matchId}`;
-      const matchResponse = await axios.get(matchUrl, {
-        headers: {"Accept": "application/vnd.api+json"},
-      });
-
-      const assets = matchResponse.data.data.relationships.assets.data;
-      if (assets && assets.length > 0) {
-        const telemetryAsset = matchResponse.data.included
-            .find((inc) => inc.id === assets[0].id);
-        if (telemetryAsset) {
-          const telemetryUrl = telemetryAsset.attributes.URL;
-          const telemetryResponse = await axios.get(telemetryUrl, {
-            headers: {"Accept-Encoding": "gzip"},
-          });
-          const telemetryEvents = telemetryResponse.data;
-          for (const event of telemetryEvents) {
-            if (
-              event._T === "LogItemPickup" &&
-              event.item &&
-              event.item.category === "Weapon"
-            ) {
-              const weaponName = event.item.itemId;
-              weaponCounts[weaponName] =
-                (weaponCounts[weaponName] || 0) + 1;
-            }
-          }
-        }
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-    console.log(
-        `Finished analyzing weapons. ` +
-        `Found ${Object.keys(weaponCounts).length} types.`,
-    );
-
-    const topWeapons = Object.entries(weaponCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([name, count], index) => ({
-          rank: index + 1,
-          weaponId: name,
-          pickCount: count,
-        }));
-
-    await db.collection("global_stats").doc("weapon_meta").set({
-      updatedAt: new Date(),
-      topWeapons: topWeapons,
+    const platform = "steam";
+    const samplesUrl = `https://api.pubg.com/shards/${platform}/samples`;
+    
+    const response = await axios.get(samplesUrl, {
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Accept": "application/vnd.api+json",
+      },
     });
 
-    console.log("Successfully updated weapon meta in Firestore!");
+    if (response.statusCode === 200) {
+      const matchIds = response.data.data.relationships.matches.data
+          .map((m) => m.id);
+
+      // Firestore 'samples' 컬렉션에 'recent_matches' 문서로 저장
+      await db.collection("samples").doc("recent_matches").set({
+        updatedAt: new Date(),
+        matchIds: matchIds,
+      });
+
+      console.log(`Successfully collected ${matchIds.length} match IDs.`);
+    } else {
+      throw new Error(`Failed to fetch samples: ${response.status}`);
+    }
     return null;
   } catch (error) {
-    console.error("Error executing function:", error);
+    console.error("Error collecting match IDs:", error);
     return null;
   }
 });
