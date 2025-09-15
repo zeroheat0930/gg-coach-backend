@@ -1,4 +1,4 @@
-// 좀되라시발
+// 좀되라시발ㅋㅋㅋ
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
