@@ -21,7 +21,6 @@ exports.collectMatchData = onSchedule({
 
     const platform = "steam";
     const samplesUrl = `https://api.pubg.com/shards/${platform}/samples`;
-
     const headers = {
       "Authorization": `Bearer ${apiKey}`,
       "Accept": "application/vnd.api+json",
@@ -29,8 +28,7 @@ exports.collectMatchData = onSchedule({
 
     const samplesResponse = await axios.get(samplesUrl, {headers});
     if (samplesResponse.status !== 200) {
-      const errorMsg = `Failed to fetch samples: ${samplesResponse.status}`;
-      throw new Error(errorMsg);
+      throw new Error(`Failed to fetch samples: ${samplesResponse.status}`);
     }
     const matchIds = samplesResponse.data.data.relationships.matches.data
         .map((m) => m.id);
@@ -40,7 +38,6 @@ exports.collectMatchData = onSchedule({
     for (const matchId of matchIds.slice(0, 15)) {
       const matchRef = db.collection("matches").doc(matchId);
       const doc = await matchRef.get();
-
       if (doc.exists) {
         console.log(`Match ${matchId} already exists. Skipping.`);
         continue;
@@ -56,11 +53,9 @@ exports.collectMatchData = onSchedule({
         const matchData = matchResponse.data;
         const attributes = matchData.data.attributes;
         const included = matchData.included;
-
         const rosters = included.filter((inc) => inc.type === "roster");
         const participants = included
             .filter((inc) => inc.type === "participant");
-
         const winningRoster =
           rosters.find((r) => r.attributes.won === "true");
         let winningTeamMembers = [];
@@ -110,9 +105,10 @@ exports.collectMatchData = onSchedule({
           }
         }
         newMatchesSaved++;
-        const successMsg =
-          `Successfully saved full data for match ${matchId}`;
-        console.log(successMsg);
+        // 여기가 수정된 부분입니다.
+        console.log(
+            `Successfully saved full data for match ${matchId}`,
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
