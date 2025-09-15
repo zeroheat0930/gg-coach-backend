@@ -22,12 +22,12 @@ exports.collectMatchData = onSchedule({
     const platform = "steam";
     const samplesUrl = `https://api.pubg.com/shards/${platform}/samples`;
 
-    const samplesResponse = await axios.get(samplesUrl, {
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Accept": "application/vnd.api+json",
-      },
-    });
+    const headers = {
+      "Authorization": `Bearer ${apiKey}`,
+      "Accept": "application/vnd.api+json",
+    };
+
+    const samplesResponse = await axios.get(samplesUrl, {headers});
     if (samplesResponse.status !== 200) {
       throw new Error(`Failed to fetch samples: ${samplesResponse.status}`);
     }
@@ -55,11 +55,24 @@ exports.collectMatchData = onSchedule({
       if (matchResponse.status === 200) {
         const matchData = matchResponse.data;
         const attributes = matchData.data.attributes;
+        let telemetryUrl = "";
+        const assets = matchData.data.relationships.assets.data;
+        if (assets && assets.length > 0) {
+          const telemetryAsset = matchData.included
+              .find((inc) => inc.id === assets[0].id);
+          if (telemetryAsset) {
+            telemetryUrl = telemetryAsset.attributes.URL;
+          }
+        }
+
         await matchRef.set({
           map: attributes.mapName,
           gameMode: attributes.gameMode,
           duration: attributes.duration,
           createdAt: new Date(attributes.createdAt),
+          isRanked: attributes.isRanked,
+          isCustomMatch: attributes.isCustomMatch,
+          telemetryUrl: telemetryUrl,
         });
 
         const participants = matchData.included
@@ -68,8 +81,8 @@ exports.collectMatchData = onSchedule({
           const stats = participant.attributes.stats;
           const participantId = stats.playerId;
           if (participantId) {
-            const participantRef = matchRef
-                .collection("participants").doc(participantId);
+            const participantRef =
+              matchRef.collection("participants").doc(participantId);
             await participantRef.set({
               nickname: stats.name,
               rank: stats.winPlace,
