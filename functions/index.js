@@ -1,4 +1,4 @@
-// 제발좀 되라 시발새끼야
+// 제발좀 되라 시발새끼야 진짜 개짜증난다
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
