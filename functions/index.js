@@ -45,20 +45,31 @@ exports.updateWeaponMeta = onSchedule({
         .map((p) => p.id);
     console.log(`Found ${playerIds.length} rankers.`);
 
+    console.log("Fetching recent matches for rankers in batches...");
     const matchIdsToAnalyze = new Set();
-    for (const playerId of playerIds.slice(50, 70)) {
-      const playerUrl =
-        `https://api.pubg.com/shards/${platformRegion}/players/${playerId}`;
+    const samplePlayerIds = allPlayerIds.slice(50, 150); // 100명의 랭커를 샘플링
+    
+    // 10명씩 묶어서 한 번에 요청
+    for (let i = 0; i < samplePlayerIds.length; i += 10) {
+      const batchIds = samplePlayerIds.slice(i, i + 10);
+      const playerUrl = `https://api.pubg.com/shards/${platformRegion}/players?filter[playerIds]=${batchIds.join(",")}`;
       const playerResponse = await axios.get(playerUrl, {headers});
-      const matchData =
-        playerResponse.data.data.relationships.matches.data;
-      if (matchData && matchData.length > 0) {
-        matchIdsToAnalyze.add(matchData[0].id);
+      
+      const playersData = playerResponse.data.data;
+      for (const player of playersData) {
+        const matchData = player.relationships.matches.data;
+        if (matchData && matchData.length > 0) {
+          matchIdsToAnalyze.add(matchData[0].id);
+        }
       }
-      if (matchIdsToAnalyze.size >= 10) break;
+      // 각 일괄 요청 사이에 6.1초 대기
       await new Promise((resolve) => setTimeout(resolve, 6100));
     }
-    console.log(`Found ${matchIdsToAnalyze.size} matches to analyze.`);
+    console.log(`Found ${matchIdsToAnalyze.size} unique matches to analyze.`);
+
+    if (matchIdsToAnalyze.size === 0) {
+        throw new Error("Could not find any recent matches from the rankers sample.");
+    }
 
     const weaponCounts = {};
     for (const matchId of matchIdsToAnalyze) {
