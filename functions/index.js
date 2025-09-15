@@ -21,7 +21,7 @@ exports.collectRecentMatchIds = onSchedule({
 
     const platform = "steam";
     const samplesUrl = `https://api.pubg.com/shards/${platform}/samples`;
-    
+
     const response = await axios.get(samplesUrl, {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
