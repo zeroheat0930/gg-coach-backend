@@ -7,7 +7,7 @@ initializeApp();
 const db = getFirestore();
 
 exports.collectRecentMatchIds = onSchedule({
-  schedule: "every 1 hours", // 1시간마다 실행
+  schedule: "every 1 hours",
   region: "asia-northeast3",
   timeoutSeconds: 300,
   memory: "256MiB",
@@ -29,11 +29,11 @@ exports.collectRecentMatchIds = onSchedule({
       },
     });
 
-    if (response.statusCode === 200) {
+    // ### 여기가 수정된 부분입니다 ###
+    if (response.status === 200) {
       const matchIds = response.data.data.relationships.matches.data
           .map((m) => m.id);
 
-      // Firestore 'samples' 컬렉션에 'recent_matches' 문서로 저장
       await db.collection("samples").doc("recent_matches").set({
         updatedAt: new Date(),
         matchIds: matchIds,
@@ -41,6 +41,7 @@ exports.collectRecentMatchIds = onSchedule({
 
       console.log(`Successfully collected ${matchIds.length} match IDs.`);
     } else {
+      // 200(성공)이 아닐 때만 에러를 발생시킵니다.
       throw new Error(`Failed to fetch samples: ${response.status}`);
     }
     return null;
