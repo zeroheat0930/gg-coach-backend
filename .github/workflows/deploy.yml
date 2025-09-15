@@ -3,16 +3,14 @@ name: Deploy to Firebase
 on:
   push:
     branches:
-      - main
-    paths:
-      - 'functions/**'
+      - main # main 브랜치에 코드가 푸시될 때마다 이 로봇이 작동합니다.
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:

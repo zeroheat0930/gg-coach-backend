@@ -1,3 +1,4 @@
+// 자동 배포 테스트를 위한 주석
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
