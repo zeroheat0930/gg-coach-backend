@@ -17,7 +17,9 @@ exports.updateWeaponMeta = onSchedule({
 
   try {
     const apiKey = process.env.PUBG_API_KEY;
-    if (!apiKey) throw new Error("PUBG_API_KEY secret is not set.");
+    if (!apiKey) {
+      throw new Error("PUBG_API_KEY secret is not set.");
+    }
 
     const platformRegion = "pc-kakao";
     const seasonId = "division.bro.official.pc-2018-37";
@@ -31,16 +33,15 @@ exports.updateWeaponMeta = onSchedule({
     };
 
     const leaderboardResponse = await axios.get(leaderboardUrl, {headers});
-    const playerIds = leaderboardResponse.data.data.relationships.players.data
+
+    const leaderboardData = leaderboardResponse.data;
+    const playerIds = leaderboardData.data.relationships.players.data
         .map((p) => p.id);
     console.log(`Found ${playerIds.length} rankers.`);
 
-    // ### 여기가 수정된 부분입니다! (일괄 요청 방식) ###
-    console.log("Fetching recent matches for rankers in batches...");
     const matchIdsToAnalyze = new Set();
-    const samplePlayerIds = playerIds.slice(50, 150); // 100명의 랭커를 샘플링
+    const samplePlayerIds = playerIds.slice(50, 150);
 
-    // 10명씩 묶어서 한 번에 요청 (API 호출 횟수가 1/10로 줄어듭니다)
     for (let i = 0; i < samplePlayerIds.length; i += 10) {
       const batchIds = samplePlayerIds.slice(i, i + 10);
       const playerUrl =
@@ -55,13 +56,12 @@ exports.updateWeaponMeta = onSchedule({
           matchIdsToAnalyze.add(matchData[0].id);
         }
       }
-      // 각 '일괄 요청' 사이에만 딜레이를 줍니다.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 6100));
     }
     console.log(`Found ${matchIdsToAnalyze.size} unique matches to analyze.`);
 
     if (matchIdsToAnalyze.size === 0) {
-      throw new Error("Could not find any recent matches from the rankers sample.");
+      throw new Error("Could not find any recent matches.");
     }
 
     const weaponCounts = {};
@@ -71,6 +71,7 @@ exports.updateWeaponMeta = onSchedule({
       const matchResponse = await axios.get(matchUrl, {
         headers: {"Accept": "application/vnd.api+json"},
       });
+
       const assets = matchResponse.data.data.relationships.assets.data;
       if (assets && assets.length > 0) {
         const telemetryAsset = matchResponse.data.included
